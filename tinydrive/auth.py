@@ -1,5 +1,4 @@
 import os.path
-from typing import Any
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -7,13 +6,15 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from tinydrive import ui
+
 # If modifying these scopes, delete the file token.json.
 SCOPES = ["https://www.googleapis.com/auth/drive.metadata.readonly"]
 
 TOKEN_PATH = ".credentials/token.json"
 CREDS_PATH = ".credentials/credentials.json"
 
-def try_get_token():
+def get_token():
     """
     Checks if there's a file at `TOKEN_PATH`. If so, tries to extract
     credentials from the file. Returns `None` otherwise.
@@ -22,44 +23,60 @@ def try_get_token():
         return Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
     return None
 
-def try_refresh_token(creds: Credentials):
+def refresh_token(creds: Credentials):
     """
     If credentials are expired, and there's a refresh token supplied,
     tries to refresh the credentials.
     """
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        write_as_token(creds.to_json())
-        return creds
-    else:
-        return None
 
-def new_token():
+    creds.refresh(Request())
+    return creds
+
+def request_token():
     """
-    Allows the user to log in, creating a fully new token.
+    Allows the user to log in, requestion an entirely new token.
     """
     flow = InstalledAppFlow.from_client_secrets_file(
         CREDS_PATH, SCOPES
     )
-    return flow.run_local_server(port=0)
+    
+    try:
+        creds = flow.run_local_server(port=0)
+    except:
+        return None
+    if isinstance(creds, Credentials):
+        return creds
+    else:
+        raise TypeError("invalid credentials type")
 
-def write_as_token(content: Any):
+def save_token(credentials: Credentials):
     with open(TOKEN_PATH, "w") as token:
-      token.write(content)
+      token.write(credentials.to_json())
 
 def get_credentials():
-    creds = try_get_token()
+    creds = get_token()
 
-    if creds:
-        creds = try_refresh_token(creds)
-
-    if not creds:
-        creds = new_token()
-        write_as_token(creds.to_json())
+    if creds and creds.expired and creds.refresh_token:
+        creds = refresh_token(creds)
+        save_token(creds)
+        ui.info("refreshed token")
 
     if not creds:
-        print("authorization failed.")
-        exit(-1)
+        creds = request_token()
+
+        if creds:
+            save_token(creds)
+            ui.info("login complete")
+        else:
+            ui.error("user login failed")
+            exit(1)
+
+    if not creds:
+        ui.error("authentication failed (internal)")
+        exit(2)
+    else:
+        ui.success("authentication complete")
+        
 
     return creds
 
