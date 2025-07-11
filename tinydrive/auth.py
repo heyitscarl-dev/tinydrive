@@ -1,4 +1,5 @@
 import os.path
+from typing import cast
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -8,33 +9,50 @@ from googleapiclient.errors import HttpError
 
 from tinydrive import ui
 
-# If modifying these scopes, delete the file token.json.
-SCOPES = ["https://www.googleapis.com/auth/drive.metadata.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 TOKEN_PATH = ".credentials/token.json"
 CREDS_PATH = ".credentials/credentials.json"
 
-def get_token():
+def load_token() -> Credentials | None:
     """
-    Checks if there's a file at `TOKEN_PATH`. If so, tries to extract
-    credentials from the file. Returns `None` otherwise.
+    Creates a Credentials instance from an authorized user json file.
+
+    Returns:
+        Credentials | None: The constructed credentials or None, 
+                            if no file can be found at TOKEN_PATH.
+        
     """
     if os.path.exists(TOKEN_PATH):
         return Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
     return None
 
-def refresh_token(creds: Credentials):
+def refresh_creds(creds: Credentials) -> Credentials | None:
     """
-    If credentials are expired, and there's a refresh token supplied,
-    tries to refresh the credentials.
-    """
+    Refreshes the given Credentials instance if possible.
 
-    creds.refresh(Request())
-    return creds
+    Returns:
+        Credentials | None: The now refreshed credentials or None,
+                            if refreshing failed.
 
-def request_token():
+    Args:
+        creds (Credentials): The potentially expired Credentials instance.
+        
     """
-    Allows the user to log in, requestion an entirely new token.
+    try:
+        creds.refresh(Request())
+        return creds
+    except:
+        return None
+
+def request_creds() -> Credentials | None:
+    """
+    Requests an entirely new Credentials instance by allowing the user to log in.
+
+    Returns:
+        Credentials | None: The newly created Credentials or None,
+                            if auth failed.
+        
     """
     flow = InstalledAppFlow.from_client_secrets_file(
         CREDS_PATH, SCOPES
@@ -42,50 +60,76 @@ def request_token():
     
     try:
         creds = flow.run_local_server(port=0)
+
+        # according to documentation, flow.run_local_server
+        # will never return google.auth.external_account_authorized_user.Credentials.
+        # thus, we can safely cast it to a Credentials instance.
+        return cast(Credentials, creds)
     except:
         return None
-    if isinstance(creds, Credentials):
-        return creds
-    else:
-        raise TypeError("invalid credentials type")
 
-def save_token(credentials: Credentials):
+
+def save_creds(credentials: Credentials | None):
+    """
+    If supplied with credentials, saves them to the token file.
+
+    Args:
+        credentials (Credentials | None): Either valid Credentials to be saved,
+                                          or None, which leads to an early return (i.e. nothing happens).
+    """
+    if not credentials:
+        return
+
     with open(TOKEN_PATH, "w") as token:
       token.write(credentials.to_json())
 
-def get_credentials():
-    creds = get_token()
+def get_credentials() -> Credentials:
+    """
+    Walks through the auth flow and ensures a valid Credentials instance.
 
-    if creds and creds.expired and creds.refresh_token:
-        creds = refresh_token(creds)
-        save_token(creds)
-        ui.info("refreshed token")
+    Returns:
+        Credentials: The constructed Credentials
 
-    if not creds:
-        creds = request_token()
-
-        if creds:
-            save_token(creds)
-            ui.info("login complete")
-        else:
-            ui.error("user login failed")
-            exit(1)
-
-    if not creds:
-        ui.error("authentication failed (internal)")
-        exit(2)
-    else:
-        ui.success("authentication complete")
+    Raises:
+        SystemExit: If authentication or authorization fails at any point.
         
+    """
+    creds = load_token()
+
+    # credentials exists, but is expired
+    if creds and creds.expired and creds.refresh_token:
+        creds = refresh_creds(creds)
+        ui.info("refreshed credentials.")
+
+    # credentials didn't exist or couldn't be refreshed
+    if not creds:
+        creds = request_creds()
+        ui.info("requested credentials.")
+
+    # credentials couldn't be newly requested
+    # -> auth failed
+    if not creds:
+        ui.error("auth flow failed.")
+        exit(1)
+    else:
+        ui.success("auth flow complete.")
 
     return creds
 
-def get_service():
-    creds = get_credentials()
+def get_service(credentials: Credentials):
+    """
+    Builds a Google Drive service using the supplied credentials.
+
+    Args:
+        credentials (Credentials): A valid Credentials instance with all required scopes.
+
+    Raises:
+        SystemExit: If building the service fails.
+    """
 
     try:
-        service = build("drive", "v3", credentials=creds)
+        service = build("drive", "v3", credentials=credentials)
         return service
     except HttpError:
-        print("service building failed.")
-        exit(-2)
+        ui.error("service building failed.")
+        exit(2)
