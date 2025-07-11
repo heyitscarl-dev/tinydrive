@@ -6,6 +6,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+import rich
 
 from tinydrive import ui
 
@@ -99,11 +100,13 @@ def get_credentials() -> Credentials:
     # credentials exists, but is expired
     if creds and creds.expired and creds.refresh_token:
         creds = refresh_creds(creds)
+        save_creds(creds)
         ui.info("refreshed credentials.")
 
     # credentials didn't exist or couldn't be refreshed
     if not creds:
         creds = request_creds()
+        save_creds(creds)
         ui.info("requested credentials.")
 
     # credentials couldn't be newly requested
