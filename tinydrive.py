@@ -1,10 +1,15 @@
 from rich.status import Status
 
 import tinydrive.auth as auth
-
-FOLDER_ID = "YOUR_FOLDER_ID"
+import dotenv
+import os
 
 def main():
+    dotenv.load_dotenv()
+    print(f"gd_folder_id: {os.getenv("GD_FOLDER_ID") or "none supplied"}")
+
+    folder_id = os.getenv("GD_FOLDER_ID") or exit(3)
+
     credentials = auth.get_credentials()
     service = auth.get_service(credentials)
 
@@ -12,7 +17,7 @@ def main():
         results = (
             service.files()
             .list(
-                q=f"'{FOLDER_ID}' in parents and trashed = false", 
+                q=f"'{folder_id}' in parents and trashed = false", 
                 fields="nextPageToken, files(id, name, mimeType)"
             )
             .execute()
