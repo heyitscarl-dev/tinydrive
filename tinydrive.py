@@ -1,10 +1,12 @@
-from tinydrive.auth import get_service
 from rich.status import Status
+
+import tinydrive.auth as auth
 
 FOLDER_ID = "YOUR_FOLDER_ID"
 
 def main():
-    service = get_service()
+    credentials = auth.get_credentials()
+    service = auth.get_service(credentials)
 
     with Status("querying files..."):
         results = (
